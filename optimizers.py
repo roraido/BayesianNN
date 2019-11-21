@@ -142,7 +142,7 @@ def SGLD_modified(tparams, cost, inps, ntrain, lr):
         eps = trng.normal(p.get_value().shape, avg = 0.0, std = 1.0, 
                           dtype=theano.config.floatX)
 
-	updated_p = p - lr * (g-p/ntrain) + tensor.sqrt(lr)*2./ntrain * eps
+	updated_p = p - lr * (g-p/ntrain) + tensor.sqrt(lr*2.)/ntrain * eps
         updates.append((p, updated_p))
 
     f_update = theano.function([lr,ntrain], [], updates=updates)
@@ -176,7 +176,7 @@ def pSGLD(tparams, cost, inps, ntrain, lr, rho=0.9, epsilon=1e-6, clip_norm=5):
         eps = trng.normal(p.get_value().shape, avg = 0.0, std = 1.0, 
                           dtype=theano.config.floatX)
         
-        updated_p = p - lr * (g-p/ntrain) / G + tensor.sqrt(lr/G)*2./ntrain * eps 
+        updated_p = p - lr * (g-p/ntrain) / G + tensor.sqrt(lr*2./G)/ntrain * eps 
         updates.append((p, updated_p))
     
     f_update = theano.function([lr,ntrain], [], updates=updates)
@@ -200,31 +200,34 @@ def pSGLD_Adam(tparams, cost, inps, ntrain, lr, rho1=0.9, rho2=0.999, epsilon=1e
     
     updates = []
     
+    i = theano.shared(numpy_floatX(0.))    
+    i_t = i + 1.
+    fix1 = 1. - rho1**(i_t)
+    fix2 = 1. - rho2**(i_t)
+    lr_t = lr * (tensor.sqrt(fix2) / fix1)
+    
     for p, g in zip(tparams.values(), gshared):
         acc = theano.shared(p.get_value() * 0.)
         acc_m = theano.shared(p.get_value() * 0.)
-        
-        acc_new = rho1 * acc + (1. - rho1) * g ** 2
+
+        acc_new = rho1 * acc + (1. - rho1) * g ** 2.
         acc_m_new = rho2 * acc_m + (1.-rho2) * g
 
         updates.append((acc, acc_new)) 
         updates.append((acc_m, acc_m_new)) 
 
-        m_acc_new = acc_new / (1. - rho1)
-        m_acc_m_new = acc_m_new / (1. - rho2)
-
-        G = tensor.sqrt(m_acc_new + epsilon)
+        G = tensor.sqrt(acc_new + epsilon)
         # G = tensor.sqrt(m_acc_new + epsilon) * (g - p/ntrain) / (m_acc_m_new - p/ntrain)
 
         eps = trng.normal(p.get_value().shape, avg = 0.0, std = 1.0, 
                           dtype=theano.config.floatX)
         
         # updated_p = p - lr * (g - p/ntrain) / G + tensor.sqrt(lr/G)*2./ntrain * eps
-        updated_p = p - lr * (m_acc_m_new - p/ntrain) / G + tensor.sqrt(lr / G)*2./ntrain * eps
+        updated_p = p - lr_t * (acc_m_new - p/ntrain) / G + tensor.sqrt(lr_t*2. / G)/ntrain * eps
         # updated_p = p - lr * (g - p/ntrain) / G + tensor.sqrt(lr * (g - p/ntrain) /(G * (m_acc_m_new - p/ntrain)))*2./ntrain * eps
 
         updates.append((p, updated_p))
-    
+    updates.append((i, i_t))
     f_update = theano.function([lr,ntrain], [], updates=updates)
     
     return f_grad_shared, f_update
@@ -262,7 +265,7 @@ def pSGLD_AdaDelta(tparams, cost, inps, ntrain, lr, rho=0.9, epsilon=1e-6, clip_
         eps = trng.normal(p.get_value().shape, avg = 0.0, std = 1.0, 
                           dtype=theano.config.floatX)
         
-        update_delta_p = - lr * (g-p/ntrain) / G + tensor.sqrt(lr/G)*2./ntrain * eps 
+        update_delta_p = - lr * (g-p/ntrain) / G + tensor.sqrt(lr*2./G)/ntrain * eps 
         updated_p = p + update_delta_p
 
         updates.append((delta_p, update_delta_p)) 
@@ -272,7 +275,7 @@ def pSGLD_AdaDelta(tparams, cost, inps, ntrain, lr, rho=0.9, epsilon=1e-6, clip_
     
     return f_grad_shared, f_update
 
-def pSGLD_RG(tparams, cost, inps, ntrain, lr, rho1=0.9, rho2=0.999, epsilon=1e-6, clip_norm=5, momentum=0.95):
+def pSGLD_RG(tparams, cost, inps, ntrain, lr, rho1=0.9, rho2=0.999, epsilon=1e-4, clip_norm=5, momentum=0.95):
     """ default: lr=0.00001 """
     """ default-no-momemnt: lr=0.001 """
     
@@ -306,8 +309,8 @@ def pSGLD_RG(tparams, cost, inps, ntrain, lr, rho1=0.9, rho2=0.999, epsilon=1e-6
         eps = trng.normal(p.get_value().shape, avg = 0.0, std = 1.0, 
                           dtype=theano.config.floatX)
         
-        # update_delta_p = - lr * (g - p/ntrain) / G + tensor.sqrt(lr/G)*2./ntrain * eps
-        update_delta_p = momentum * delta_p - lr * (g - p/ntrain) / G + tensor.sqrt(lr/G)*2./ntrain * eps  # moment
+        update_delta_p = - lr * (g - p/ntrain) / G + tensor.sqrt(lr/G)*2./ntrain * eps
+        # update_delta_p = momentum * delta_p - lr * (g - p/ntrain) / G + tensor.sqrt(lr*2./G)/ntrain * eps  # moment
 
         updated_p = p + update_delta_p
 
